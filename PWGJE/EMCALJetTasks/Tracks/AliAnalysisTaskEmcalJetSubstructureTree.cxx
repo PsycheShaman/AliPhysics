@@ -36,6 +36,12 @@
 #include <fastjet/ClusterSequence.hh>
 #include <fastjet/contrib/Nsubjettiness.hh>
 #include <fastjet/contrib/SoftDrop.hh>
+#include <fastjet/config.h>
+#if FASJET_VERSION_NUMBER >= 30302
+#include <fastjet/tools/Recluster.hh>
+#else 
+#include <fastjet/contrib/Recluster.hh>
+#endif
 
 #include <THistManager.h>
 #include <TLinearBinning.h>
@@ -75,12 +81,9 @@
 #include "AliEmcalParticleJetConstituent.h"
 #endif
 
+ClassImp(PWGJE::EMCALJetTasks::AliAnalysisTaskEmcalJetSubstructureTree);
 
-/// \cond CLASSIMP
-ClassImp(EmcalTriggerJets::AliAnalysisTaskEmcalJetSubstructureTree);
-/// \endcond
-
-namespace EmcalTriggerJets {
+using namespace PWGJE::EMCALJetTasks;
 
 AliAnalysisTaskEmcalJetSubstructureTree::AliAnalysisTaskEmcalJetSubstructureTree() :
     AliAnalysisTaskEmcalJet(),
@@ -170,15 +173,21 @@ void AliAnalysisTaskEmcalJetSubstructureTree::UserCreateOutputObjects() {
   // Make QA for constituent clusters
   TLinearBinning jetptbinning(9, 20, 200),
                  clusterenergybinning(200, 0., 200),
+                 cellenergybinning(1000, 0., 100),
                  timebinning(1000, -500., 500.),
                  m02binning(100, 0., 1.),
-                 ncellbinning(101, -0.5, 100.5);
+                 ncellbinning(101, -0.5, 100.5),
+                 exoticsbinning(2, -0.5, 1.5);
   fQAHistos = new THistManager("QAhistos");
   fQAHistos->CreateTH1("hEventCounter", "Event counter", 1, 0.5, 1.5);
+  fQAHistos->CreateTH1("hTriggerClusterCounter", "Event counter separating into trigger clusters", 7, -1.5, 5.5);
   fQAHistos->CreateTH2("hClusterConstE", "EMCAL cluster energy vs jet pt; p_{t, jet} (GeV/c); E_{cl} (GeV)", jetptbinning, clusterenergybinning);
   fQAHistos->CreateTH2("hClusterConstTime", "EMCAL cluster time vs. jet pt; p_{t, jet} (GeV/c); t_{cl} (ns)", jetptbinning, timebinning);
   fQAHistos->CreateTH2("hClusterConstM02", "EMCAL cluster M02 vs. jet pt; p{t, jet} (GeV/c); M02", jetptbinning, m02binning);
   fQAHistos->CreateTH2("hClusterConstNcell", "EMCAL cluster ncell vs. jet pt; p{t, jet} (GeV/c); Number of cells", jetptbinning, ncellbinning);
+  fQAHistos->CreateTH2("hClusterConstExotics", "EMCAL cluster exotics cut vs jet pt; p{t, jet} (GeV/c); Cluster exotics", jetptbinning, exoticsbinning);
+  fQAHistos->CreateTH2("hClusterConstMinCellEnergy", "EMCAL Cluster const min cell energy; p{t, jet} (GeV/c); E_{cell} (GeV/c)", jetptbinning, cellenergybinning);
+  fQAHistos->CreateTH2("hClusterConstMaxCellEnergy", "EMCAL Cluster const max (seed) cell energy; p{t, jet} (GeV/c); E_{cell} (GeV/c)", jetptbinning, cellenergybinning);
 
   // Test of constituent QA
 #ifdef EXPERIMENTAL_JETCONSTITUENTS
@@ -294,17 +303,25 @@ bool AliAnalysisTaskEmcalJetSubstructureTree::Run(){
          isCENTNOTRD = (std::find(clusternames.begin(), clusternames.end(), "CENTNOTRD") != clusternames.end()),
          isCALO = (std::find(clusternames.begin(), clusternames.end(), "CALO") != clusternames.end()),
          isCALOFAST = (std::find(clusternames.begin(), clusternames.end(), "CALOFAST") != clusternames.end());
-    if(isCENT) fGlobalTreeParams->fTriggerClusterIndex = 0;
-    else if(isCENTNOTRD) fGlobalTreeParams->fTriggerClusterIndex = 1;
-    else if(isCALO) fGlobalTreeParams->fTriggerClusterIndex = 2;
-    else if(isCALOFAST) fGlobalTreeParams->fTriggerClusterIndex = 3;
+    if(isCENT || isCENTNOTRD) {
+      if(isCENT && isCENTNOTRD) fGlobalTreeParams->fTriggerClusterIndex = 0;    // CENTBOTH
+      else if(isCENT) fGlobalTreeParams->fTriggerClusterIndex = 1;              // OnlyCENT
+      else fGlobalTreeParams->fTriggerClusterIndex = 2;                         // OnlyCENTNOTRD
+    }
+    if(isCALO || isCALOFAST){
+      // CALO(FAST) and CENT(NOTRD) clusters disjunct - CALO cluster not read out in parallel with CENT cluster
+      // Therefore mixing between CALO and CENT triggers doesn't need to be handled.
+      if(isCALO && isCALOFAST) fGlobalTreeParams->fTriggerClusterIndex = 3;
+      else if(isCALO) fGlobalTreeParams->fTriggerClusterIndex = 4;
+      else if(isCALOFAST) fGlobalTreeParams->fTriggerClusterIndex = 5;
+    }
   }
 
   double weight = 1.;
   if(fUseDownscaleWeight){
     AliDebugStream(2) << "Trigger selection string: " << fTriggerSelectionString << std::endl;
     TString selectionString = (fTriggerSelectionBits & AliVEvent::kINT7) ? "INT7" : fTriggerSelectionString;
-    auto triggerstring = MatchTrigger(selectionString.Data());
+    auto triggerstring = MatchTrigger(selectionString.Data(), fTriggerSelectionString.Data());
     AliDebugStream(2) << "Getting downscale correction factor for trigger string " << triggerstring << std::endl;
     weight = 1./PWG::EMCAL::AliEmcalDownscaleFactorsOCDB::Instance()->GetDownscaleFactorForTriggerClass(triggerstring);
   }
@@ -314,6 +331,7 @@ bool AliAnalysisTaskEmcalJetSubstructureTree::Run(){
 
   // Count events (for spectrum analysis)
   fQAHistos->FillTH1("hEventCounter", 1);
+  fQAHistos->FillTH1("hTriggerClusterCounter", fGlobalTreeParams->fTriggerClusterIndex);
 
   AliSoftdropDefinition softdropSettings;
   softdropSettings.fBeta = fSDBetaCut;
@@ -349,8 +367,8 @@ bool AliAnalysisTaskEmcalJetSubstructureTree::Run(){
           DoConstituentQA(jet, tracks, clusters);
           AliJetSubstructureData structureData =  MakeJetSubstructure(*jet, datajets->GetJetRadius() * 2., tracks, clusters, {softdropSettings, nsubjettinessSettings}),
                                  structureMC = fFillPart ? MakeJetSubstructure(*associatedJet, mcjets->GetJetRadius() * 2, particles, nullptr, {softdropSettings, nsubjettinessSettings}) : AliJetSubstructureData();
-          if(fKineRec) *fKineRec = MakeJetKineParameters(*jet);
-          if(fKineSim) *fKineSim = MakeJetKineParameters(*associatedJet);
+          if(fKineRec) *fKineRec = MakeJetKineParameters(*jet, kDetLevel, tracks, clusters);
+          if(fKineSim) *fKineSim = MakeJetKineParameters(*associatedJet, kPartLevel, particles, nullptr);
           if(fSoftDropMeasured) *fSoftDropMeasured = structureData.fSoftDrop;
           if(fSoftDropTrue) *fSoftDropTrue = structureMC.fSoftDrop;
           if(fNSubMeasured) *fNSubMeasured = structureData.fNsubjettiness;
@@ -368,7 +386,7 @@ bool AliAnalysisTaskEmcalJetSubstructureTree::Run(){
         try {
           DoConstituentQA(jet, tracks, clusters);
           AliJetSubstructureData structure = MakeJetSubstructure(*jet, 0.4, tracks, clusters, {softdropSettings, nsubjettinessSettings});
-          if(fKineRec) *fKineRec = MakeJetKineParameters(*jet);
+          if(fKineRec) *fKineRec = MakeJetKineParameters(*jet, kDetLevel, tracks, clusters);
           if(fSoftDropMeasured) *fSoftDropMeasured = structure.fSoftDrop;
           if(fNSubMeasured) *fNSubMeasured = structure.fNsubjettiness;
           if(fJetStructureMeasured) *fJetStructureMeasured = {MakeAngularity(*jet, tracks, clusters), MakePtD(*jet, tracks, clusters)};
@@ -388,7 +406,7 @@ bool AliAnalysisTaskEmcalJetSubstructureTree::Run(){
         AliEmcalJet *mcjet = static_cast<AliEmcalJet *>(j);
         try {
           AliJetSubstructureData structure = MakeJetSubstructure(*mcjet, mcjets->GetJetRadius() * 2., particles, nullptr,{softdropSettings, nsubjettinessSettings});
-          if(this->fKineSim) *fKineSim = MakeJetKineParameters(*mcjet);
+          if(this->fKineSim) *fKineSim = MakeJetKineParameters(*mcjet, kPartLevel, particles, nullptr);
           if(fSoftDropTrue) *fSoftDropTrue = structure.fSoftDrop;
           if(fNSubTrue) *fNSubTrue = structure.fNsubjettiness;
           if(fJetStructureTrue) *fJetStructureTrue = {MakeAngularity(*mcjet, particles, nullptr), MakePtD(*mcjet, particles, nullptr)};
@@ -461,6 +479,7 @@ void AliAnalysisTaskEmcalJetSubstructureTree::UserExecOnce() {
       std::string clustname = clust->GetName();
       auto iscent = clustname.find("CENT") != std::string::npos, iscalo = clustname.find("CALO") != std::string::npos; 
       if(!(iscalo || iscent)) continue;
+      AliInfoStream() << "Adding trigger cluster " << clustname << " to cluster lumi monitor" << std::endl;
       clusternames.emplace_back(clustname);
    }
 
@@ -482,8 +501,9 @@ void AliAnalysisTaskEmcalJetSubstructureTree::FillLuminosity() {
         auto int7trigger = trigger.IsTriggerClass("INT7");
         auto bunchcrossing = trigger.BunchCrossing() == "B";
         auto nopf = trigger.PastFutureProtection() == "NOPF";
+        bool centcalo = (trigger.Triggercluster().find("CENT") != std::string::npos) || (trigger.Triggercluster().find("CALO") != std::string::npos);
         AliDebugStream(4) << "Full name: " << trigger.ExpandClassName() << ", INT7 trigger:  " << (int7trigger ? "Yes" : "No") << ", bunch crossing: " << (bunchcrossing ? "Yes" : "No") << ", no past-future protection: " << (nopf ? "Yes" : "No")  << ", Cluster: " << trigger.Triggercluster() << std::endl;
-        if(int7trigger && bunchcrossing && nopf) {
+        if(int7trigger && bunchcrossing && nopf && centcalo) {
           double downscale = downscalefactors->GetDownscaleFactorForTriggerClass(trigger.ExpandClassName());
           AliDebugStream(5) << "Using downscale " << downscale << std::endl;
           fLumiMonitor->Fill(trigger.Triggercluster().data(), 1./downscale);
@@ -493,7 +513,7 @@ void AliAnalysisTaskEmcalJetSubstructureTree::FillLuminosity() {
   }
 }
 
-AliJetKineParameters AliAnalysisTaskEmcalJetSubstructureTree::MakeJetKineParameters(const AliEmcalJet &jet) const {
+AliJetKineParameters AliAnalysisTaskEmcalJetSubstructureTree::MakeJetKineParameters(const AliEmcalJet &jet, JetRecType_t rectype, const AliParticleContainer *const tracks, const AliClusterContainer *const clusters) const {
   AliJetKineParameters result;
   result.fPt = TMath::Abs(jet.Pt());
   result.fE = jet.E();
@@ -504,6 +524,42 @@ AliJetKineParameters AliAnalysisTaskEmcalJetSubstructureTree::MakeJetKineParamet
   result.fNEF = jet.NEF();
   result.fNCharged = jet.GetNumberOfTracks();
   result.fNNeutral = jet.GetNumberOfClusters();
+  std::vector<double> zcharged, zneutral;
+  if(tracks) {
+    // Find the leading track
+    for(auto icharged = 0; icharged < jet.GetNumberOfTracks(); icharged++){
+      auto trk = jet.TrackAt(icharged, tracks->GetArray());
+      bool charged = true;
+      if(rectype == kPartLevel){
+        if(!trk->Charge()) charged = false;
+      }
+      auto z = jet.GetZ(trk);
+      if(charged) zcharged.push_back(z);
+      else zneutral.push_back(z);
+    }
+  } 
+  if(clusters) {
+    for(auto iclust = 0; iclust < jet.GetNumberOfClusters(); iclust++){
+      auto clust = jet.ClusterAt(iclust, clusters->GetArray());
+      TLorentzVector clustervec;
+      clust->GetMomentum(clustervec, fVertex, (AliVCluster::VCluUserDefEnergy_t)clusters->GetDefaultClusterEnergy());
+      auto z = jet.GetZ(clustervec.Px(), clustervec.Py(), clustervec.Pz());
+      zneutral.push_back(z);
+    }
+  }
+  result.fZLeading = -1.;
+  result.fZLeadingCharged = -1.;
+  result.fZLeadingNeutral = -1;
+  if(zcharged.size()) {
+    std::sort(zcharged.begin(), zcharged.end(), std::greater<double>());
+    result.fZLeadingCharged = zcharged[0];
+    result.fZLeading = result.fZLeadingCharged;
+  }
+  if(zneutral.size()){
+    std::sort(zneutral.begin(), zneutral.end(), std::greater<double>());
+    result.fZLeadingNeutral = zneutral[0];
+    if(result.fZLeadingNeutral > result.fZLeading) result.fZLeading = result.fZLeadingNeutral;
+  }
   return result;
 }
 
@@ -513,6 +569,7 @@ AliJetSubstructureData AliAnalysisTaskEmcalJetSubstructureTree::MakeJetSubstruct
   bool isMC = dynamic_cast<const AliMCParticleContainer *>(tracks);
   AliDebugStream(2) << "Make new jet substrucutre for " << (isMC ? "MC" : "data") << " jet: Number of tracks " << jet.GetNumberOfTracks() << ", clusters " << jet.GetNumberOfClusters() << std::endl;
   if(tracks && (fUseChargedConstituents || isMC)){                    // Neutral particles part of particle container in case of MC
+    AliDebugStream(1) << "Jet substructure: Using charged constituents" << std::endl;
     for(int itrk = 0; itrk < jet.GetNumberOfTracks(); itrk++){
       auto track = jet.TrackAt(itrk, tracks->GetArray());
       if(!track->Charge() && !fUseNeutralConstituents) continue;      // Reject neutral constituents in case of using only charged consituents
@@ -524,6 +581,7 @@ AliJetSubstructureData AliAnalysisTaskEmcalJetSubstructureTree::MakeJetSubstruct
   }
 
   if(clusters && fUseNeutralConstituents){
+    AliDebugStream(1) << "Jet substructure: Using neutral constituents" << std::endl;
     for(int icl = 0; icl < jet.GetNumberOfClusters(); icl++) {
       auto cluster = jet.ClusterAt(icl, clusters->GetArray());
       TLorentzVector clustervec;
@@ -559,8 +617,12 @@ AliJetSubstructureData AliAnalysisTaskEmcalJetSubstructureTree::MakeJetSubstruct
 AliSoftDropParameters AliAnalysisTaskEmcalJetSubstructureTree::MakeSoftDropParameters(const fastjet::PseudoJet &jet, const AliSoftdropDefinition &cutparameters) const {
   fastjet::contrib::SoftDrop softdropAlgorithm(cutparameters.fBeta, cutparameters.fZ);
   softdropAlgorithm.set_verbose_structure(kTRUE);
-  std::unique_ptr<fastjet::contrib::Recluster> reclusterizer(new fastjet::contrib::Recluster(cutparameters.fRecluserAlgo, 1, true));
-  softdropAlgorithm.set_reclustering(kTRUE, reclusterizer.get());
+#if FASTJET_VERSION_NUMBER >= 30302
+  fastjet::Recluster reclusterizer(cutparameters.fRecluserAlgo, 1, fastjet::Recluster::keep_only_hardest);
+#else
+  fastjet::contrib::Recluster reclusterizer(cutparameters.fRecluserAlgo, 1, true);
+#endif
+  softdropAlgorithm.set_reclustering(kTRUE, &reclusterizer);
   AliDebugStream(4) << "Jet has " << jet.constituents().size() << " constituents" << std::endl;
   auto groomed = softdropAlgorithm(jet);
   try {
@@ -594,6 +656,7 @@ Double_t AliAnalysisTaskEmcalJetSubstructureTree::MakeAngularity(const AliEmcalJ
   Double_t den(0.), num(0.);
   bool isMC = dynamic_cast<const AliMCParticleContainer *>(tracks);
   if(tracks && (fUseChargedConstituents || isMC)){
+    AliDebugStream(1) << "Angularity: Using charged constituents" << std::endl;
     for(UInt_t itrk = 0; itrk < jet.GetNumberOfTracks(); itrk++) {
       auto track = jet.TrackAt(itrk, tracks->GetArray());
       if(!track){
@@ -609,6 +672,7 @@ Double_t AliAnalysisTaskEmcalJetSubstructureTree::MakeAngularity(const AliEmcalJ
     }
   }
   if(clusters && fUseNeutralConstituents) {
+    AliDebugStream(1) << "Using neutral constituents" << std::endl;
     for(UInt_t icl = 0; icl < jet.GetNumberOfClusters(); icl++){
       auto clust = jet.ClusterAt(icl, clusters->GetArray());
       if(!clust) {
@@ -631,6 +695,7 @@ Double_t AliAnalysisTaskEmcalJetSubstructureTree::MakePtD(const AliEmcalJet &jet
   Double_t den(0.), num(0.);
   bool isMC = dynamic_cast<const AliMCParticleContainer *>(particles);
   if(particles && (fUseChargedConstituents || isMC)){
+    AliDebugStream(1) << "Using charged constituents" << std::endl;
     for(UInt_t itrk = 0; itrk < jet.GetNumberOfTracks(); itrk++) {
       auto trk = jet.TrackAt(itrk, particles->GetArray());
       if(!trk){
@@ -644,6 +709,7 @@ Double_t AliAnalysisTaskEmcalJetSubstructureTree::MakePtD(const AliEmcalJet &jet
     }
   }
   if(clusters && fUseNeutralConstituents){
+    AliDebugStream(1) << "Using neutral constituents" << std::endl;
     for(UInt_t icl = 0; icl < jet.GetNumberOfClusters(); icl++){
       auto clust = jet.ClusterAt(icl, clusters->GetArray());
       if(!clust) {
@@ -664,9 +730,19 @@ void AliAnalysisTaskEmcalJetSubstructureTree::DoConstituentQA(const AliEmcalJet 
     auto clust = jet->ClusterAt(icl, clusters->GetArray());
     AliDebugStream(3) << "cluster time " << clust->GetTOF() << std::endl;
     fQAHistos->FillTH2("hClusterConstE", jet->Pt(),clust->GetUserDefEnergy(clusters->GetDefaultClusterEnergy()));
-    fQAHistos->FillTH2("hClusterConstTime", jet->Pt(), clust->GetTOF());
+    fQAHistos->FillTH2("hClusterConstTime", jet->Pt(), clust->GetTOF()*1e9);    // convert to nanoseconds
     fQAHistos->FillTH2("hClusterConstM02", jet->Pt(), clust->GetM02());
     fQAHistos->FillTH2("hClusterConstNcell", jet->Pt(), clust->GetNCells());
+    fQAHistos->FillTH2("hClusterConstExotics", jet->Pt(), clust->GetIsExotic() ? 1. : 0.);
+
+    double mincell(100000.), maxcell(0.);
+    for(int icell = 0; icell < clust->GetNCells(); icell++){
+      double ecell = clust->E() * clust->GetCellAmplitudeFraction(icell);
+      if(ecell < mincell) mincell = ecell;
+      if(ecell > maxcell) maxcell = ecell;
+    }
+    fQAHistos->FillTH2("hClusterConstMinCellEnergy", jet->Pt(), mincell);
+    fQAHistos->FillTH2("hClusterConstMaxCellEnergy", jet->Pt(), maxcell);
 
 #ifdef EXPERIMENTAL_JETCONSTITUENTS
     fQAHistos->FillTH2("hClusterIndexENLC", jet->Pt(), clust->GetNonLinCorrEnergy());
@@ -726,36 +802,6 @@ bool AliAnalysisTaskEmcalJetSubstructureTree::SelectJet(const AliEmcalJet &jet, 
   nallowed += fUseChargedConstituents ? ncharged : 0;
   nallowed += fUseNeutralConstituents ? nneutral : 0;
   return nallowed > 0;
-}
-
-std::string AliAnalysisTaskEmcalJetSubstructureTree::MatchTrigger(const std::string &triggertoken) const {
-  std::vector<std::string> tokens;
-  std::string result;
-  std::stringstream decoder(fInputEvent->GetFiredTriggerClasses().Data());
-  while(std::getline(decoder, result, ' '))  tokens.emplace_back(result); 
-  result.clear();
-  for(auto t : tokens) {
-    if(t.find(triggertoken) != std::string::npos) {
-      // take first occurrence - downscale factor should normally be the same
-      result = t;
-      break;
-    }
-  }
-  return result;
-}
-
-bool AliAnalysisTaskEmcalJetSubstructureTree::IsSelectEmcalTriggers(const std::string &triggerstring) const {
-  const std::array<std::string, 8> kEMCALTriggers = {
-    "EJ1", "EJ2", "DJ1", "DJ2", "EG1", "EG2", "DG1", "DG2"
-  };
-  bool isEMCAL = false;
-  for(auto emcaltrg : kEMCALTriggers) {
-    if(triggerstring.find(emcaltrg) != std::string::npos) {
-      isEMCAL = true;
-      break;
-    }
-  }
-  return isEMCAL;
 }
 
 AliAnalysisTaskEmcalJetSubstructureTree *AliAnalysisTaskEmcalJetSubstructureTree::AddEmcalJetSubstructureTreeMaker(Bool_t isMC, Bool_t isData, Double_t jetradius, AliJetContainer::EJetType_t jettype, AliJetContainer::ERecoScheme_t recombinationScheme, Bool_t useDCAL, const char *trigger){
@@ -896,6 +942,9 @@ void AliJetKineParameters::LinkJetTreeBranches(TTree *jettree, const char *tag){
   LinkBranch(jettree, &fNEF, Form("NEF%s", tag), "D");
   LinkBranch(jettree, &fNCharged, Form("NCharged%s", tag), "I");
   LinkBranch(jettree, &fNNeutral, Form("NNeutral%s", tag), "I");
+  LinkBranch(jettree, &fZLeading, Form("ZLeading%s", tag), "D");
+  LinkBranch(jettree, &fZLeadingCharged, Form("ZLeadingCharged%s", tag), "D");
+  LinkBranch(jettree, &fZLeadingNeutral, Form("ZLeadingNeutral%s", tag), "D");
 }
 
 void AliJetTreeGlobalParameters::LinkJetTreeBranches(TTree *jettree, bool fillRho) {
@@ -910,7 +959,6 @@ void AliJetTreeGlobalParameters::LinkJetTreeBranches(TTree *jettree, bool fillRh
   }
 }
 
-void LinkBranch(TTree *jettree, void *data, const char *branchname, const char *type) {
+void PWGJE::EMCALJetTasks::LinkBranch(TTree *jettree, void *data, const char *branchname, const char *type) {
   jettree->Branch(branchname, data, Form("%s/%s", branchname, type));
 }
-} /* namespace EmcalTriggerJets */

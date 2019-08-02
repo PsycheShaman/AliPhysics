@@ -36,6 +36,7 @@
 #include "AliMCEventHandler.h"
 #include "AliESDEvent.h"
 #include "AliAODEvent.h"
+#include "AliVEvent.h"
 #include "AliMCEvent.h"
 
 //#include "AliAnalysisTask.h"
@@ -46,6 +47,7 @@
 #include "AliFemtoEventReaderESDChain.h"
 #include "AliFemtoEventReaderESDChainKine.h"
 #include "AliFemtoEventReaderAODChain.h"
+#include "AliFemtoEventReaderNanoAODChain.h"
 #include "AliFemtoEventReaderStandard.h"
 #include "AliFemtoEventReaderKinematicsChain.h"
 #include "AliFemtoEventReaderKinematicsChainESD.h"
@@ -73,7 +75,7 @@ public:
   /// Construct with task name, configuration filename, and verbosity flag.
   ///
   /// The paramters are set to the empty string.
-  AliAnalysisTaskFemto(TString name, TString aConfigMacro, Bool_t aVerbose=kFALSE);
+  AliAnalysisTaskFemto(TString name, TString aConfigMacro="ConfigFemtoAnalysis.C", Bool_t aVerbose=kFALSE);
 
   /// Copy Constructor - should not be used
   AliAnalysisTaskFemto(const AliAnalysisTaskFemto& aFemtoTask);
@@ -94,6 +96,7 @@ public:
   void SetFemtoReaderESD(AliFemtoEventReaderESDChain *aReader);
   void SetFemtoReaderESDKine(AliFemtoEventReaderESDChainKine *aReader);
   void SetFemtoReaderAOD(AliFemtoEventReaderAODChain *aReader);
+  void SetFemtoReaderNanoAOD(AliFemtoEventReaderNanoAODChain *aReader);
   void SetFemtoReaderStandard(AliFemtoEventReaderStandard *aReader);
   void SetFemtoReaderKinematics(AliFemtoEventReaderKinematicsChain *aReader);
   void SetFemtoReaderKinematicsESD(AliFemtoEventReaderKinematicsChainESD *aReader);
@@ -109,12 +112,24 @@ public:
   void Set1DCorrectionsLambdas(TH1D *h1);
   void Set1DCorrectionsLambdasMinus(TH1D *h1);
 
-private:
+  void Set4DCorrectionsPions(THnSparse *h1);
+  void Set4DCorrectionsKaons(THnSparse *h1);
+  void Set4DCorrectionsProtons(THnSparse *h1);
+  void Set4DCorrectionsPionsMinus(THnSparse *h1);
+  void Set4DCorrectionsKaonsMinus(THnSparse *h1);
+  void Set4DCorrectionsProtonsMinus(THnSparse *h1);
+  void Set4DCorrectionsAll(THnSparse *h1);
+  void Set4DCorrectionsLambdas(THnSparse *h1);
+  void Set4DCorrectionsLambdasMinus(THnSparse *h1);
+
+protected:
   AliESDEvent          *fESD;          //!<! ESD object
   AliESDpid            *fESDpid;       //!<! ESDpid object
+  AliVEvent            *fVEvent;       //!<! AliVEvent object
   AliAODEvent          *fAOD;          //!<! AOD object
   AliAODpidUtil        *fAODpidUtil;   ///<  AliAODpidUtil object
-  AliAODHeader         *fAODheader;    ///<  AliAODHeader object (to get reference multiplicity in pp)
+  AliAODHeader         *fAODheader;     ///< AliAODHeader object (to get reference multiplicity in pp)
+  AliNanoAODHeader     *fNanoAODheader; //!<! AliNanoAODHeader object
 
   AliStack             *fStack;        //!<! Stack from Kinematics
   TList                *fOutputList;   ///<  AliFemto results list
@@ -124,6 +139,7 @@ private:
   TString              fConfigMacro;   ///<  Config macro location
   TString              fConfigParams;  ///<  Config macro parameters
   Bool_t               fVerbose;
+
   TH1D                 *f1DcorrectionsPions; //file with corrections, pT dependant
   TH1D                 *f1DcorrectionsKaons; //file with corrections, pT dependant
   TH1D                 *f1DcorrectionsProtons; //file with corrections, pT dependant
@@ -133,6 +149,16 @@ private:
   TH1D                 *f1DcorrectionsAll; //file with corrections, pT dependant
   TH1D                 *f1DcorrectionsLambdas; //file with corrections, pT dependant
   TH1D                 *f1DcorrectionsLambdasMinus; //file with corrections, pT dependant
+
+  THnSparse            *f4DcorrectionsPions; //file with corrections, pT dependant
+  THnSparse            *f4DcorrectionsKaons; //file with corrections, pT dependant
+  THnSparse            *f4DcorrectionsProtons; //file with corrections, pT dependant
+  THnSparse            *f4DcorrectionsPionsMinus; //file with corrections, pT dependant
+  THnSparse            *f4DcorrectionsKaonsMinus; //file with corrections, pT dependant
+  THnSparse            *f4DcorrectionsProtonsMinus; //file with corrections, pT dependant
+  THnSparse            *f4DcorrectionsAll; //file with corrections, pT dependant
+  THnSparse            *f4DcorrectionsLambdas; //file with corrections, pT dependant
+  THnSparse            *f4DcorrectionsLambdasMinus; //file with corrections, pT dependant
 
   /// \cond CLASSIMP
   ClassDef(AliAnalysisTaskFemto, 3);
@@ -144,9 +170,11 @@ AliAnalysisTaskFemto::AliAnalysisTaskFemto():
   AliAnalysisTaskSE(),
   fESD(NULL),
   fESDpid(NULL),
+  fVEvent(NULL),
   fAOD(NULL),
   fAODpidUtil(NULL),
   fAODheader(NULL),
+  fNanoAODheader(NULL),
   fStack(NULL),
   fOutputList(NULL),
   fReader(NULL),
@@ -163,7 +191,16 @@ AliAnalysisTaskFemto::AliAnalysisTaskFemto():
   f1DcorrectionsProtonsMinus(NULL),
   f1DcorrectionsAll(NULL),
   f1DcorrectionsLambdas(NULL),
-  f1DcorrectionsLambdasMinus(NULL)
+  f1DcorrectionsLambdasMinus(NULL),
+  f4DcorrectionsPions(NULL),
+  f4DcorrectionsKaons(NULL),
+  f4DcorrectionsProtons(NULL),
+  f4DcorrectionsPionsMinus(NULL),
+  f4DcorrectionsKaonsMinus(NULL),
+  f4DcorrectionsProtonsMinus(NULL),
+  f4DcorrectionsAll(NULL),
+  f4DcorrectionsLambdas(NULL),
+  f4DcorrectionsLambdasMinus(NULL)
 {
   /* no-op */
 }

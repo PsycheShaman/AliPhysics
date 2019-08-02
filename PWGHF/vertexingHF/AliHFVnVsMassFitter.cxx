@@ -51,6 +51,12 @@ AliHFVnVsMassFitter::AliHFVnVsMassFitter()
   ,fChiSquare(0.)
   ,fNDF(0)
   ,fProb(0.)
+  ,fSBVnPrefitChiSquare(0.)
+  ,fSBVnPrefitNDF(0)
+  ,fSBVnPrefitProb(0.)
+  ,fMassPrefitChiSquare(0.)
+  ,fMassPrefitNDF(0)
+  ,fMassPrefitProb(0.)
   ,fNSigmaForSB(3.)
   ,fSigmaInit(0.012)
   ,fMeanInit(1.870)
@@ -87,6 +93,9 @@ AliHFVnVsMassFitter::AliHFVnVsMassFitter()
   ,fSmoothRfl(kFALSE)
   ,fRawYieldHelp(0.)
   ,fVnRflOpt(0)
+  ,fVnRflLimited(kFALSE)
+  ,fVnRflMin(-1.)
+  ,fVnRflMax(1.)
   ,fSecondPeak(kFALSE)
   ,fMassSecPeakFunc(0x0)
   ,fNParsSec(0)
@@ -126,7 +135,13 @@ AliHFVnVsMassFitter::AliHFVnVsMassFitter(TH1F* hMass, TH1F* hvn, Double_t min, D
   ,fRawYieldUncertainty(0.)
   ,fChiSquare(0.)
   ,fNDF(0)
-  ,fProb(0)
+  ,fProb(0.)
+  ,fSBVnPrefitChiSquare(0.)
+  ,fSBVnPrefitNDF(0)
+  ,fSBVnPrefitProb(0.)
+  ,fMassPrefitChiSquare(0.)
+  ,fMassPrefitNDF(0)
+  ,fMassPrefitProb(0.)
   ,fNSigmaForSB(3.)
   ,fSigmaInit(0.012)
   ,fMeanInit(1.870)
@@ -163,6 +178,9 @@ AliHFVnVsMassFitter::AliHFVnVsMassFitter(TH1F* hMass, TH1F* hvn, Double_t min, D
   ,fSmoothRfl(kFALSE)
   ,fRawYieldHelp(0.)
   ,fVnRflOpt(0)
+  ,fVnRflLimited(kFALSE)
+  ,fVnRflMin(-1.)
+  ,fVnRflMax(1.)
   ,fSecondPeak(kFALSE)
   ,fMassSecPeakFunc(0x0)
   ,fNParsSec(0)
@@ -212,11 +230,13 @@ Bool_t AliHFVnVsMassFitter::SimultaneusFit(Bool_t drawFit) {
   const Int_t nparsmass = fNParsMassSgn+fNParsMassBkg+fNParsSec+fNParsRfl;
   Int_t NvnParsSgn = 1;
   if(fSecondPeak && fDoSecondPeakVn) {NvnParsSgn+=1;}
+  if(fReflections && fVnRflOpt==kFreePar) {NvnParsSgn+=1;}
   const Int_t nparsvn = nparsmass+fNParsVnBkg+NvnParsSgn;
 
   Bool_t massprefit=MassPrefit();
   if(!massprefit) {AliError("Impossible to perform the mass prefit"); return kFALSE;}
   Bool_t vnprefit=VnSBPrefit();
+  if(!vnprefit) {AliError("Impossible to perform the bkg vn prefit"); return kFALSE;}
 
   std::vector<Double_t> initpars;
   for(Int_t iBkgPar=0; iBkgPar<fNParsMassBkg; iBkgPar++) {
@@ -276,14 +296,19 @@ Bool_t AliHFVnVsMassFitter::SimultaneusFit(Bool_t drawFit) {
     if(fFixSecMass) {fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn+1).Fix();}
     if(fFixSecWidth) {fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn+2).Fix();}
   }
-  if(fReflections && fFixRflOverSig) {fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn+fNParsSec).Fix();}
+  if(fReflections) {
+    if(fFixRflOverSig) fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn+fNParsSec).Fix();
+    if(fVnRflLimited) fitter.Config().ParSettings(nparsmass+fNParsVnBkg+NvnParsSgn-1).SetLimits(fVnRflMin,fVnRflMax);
+  }
 
   fitter.Config().MinimizerOptions().SetPrintLevel(0);
   fitter.Config().SetMinimizer("Minuit2","Migrad");
   for(Int_t iPar=0; iPar<nparsvn; iPar++) {fitter.Config().ParSettings(iPar).SetName(fVnTotFunc->GetParName(iPar));}
   // fit FCN function directly
   // (specify optionally data size and flag to indicate that is a chi2 fit
-  fitter.FitFCN(nparsvn,globalChi2,0,dataMass.Size()+dataVn.Size(),kFALSE);
+  Bool_t isFitOk = fitter.FitFCN(nparsvn,globalChi2,0,dataMass.Size()+dataVn.Size(),kFALSE);
+  if(!isFitOk) return kFALSE;
+
   ROOT::Fit::FitResult result = fitter.Result();
   result.Print(std::cout);
 
@@ -312,13 +337,15 @@ Bool_t AliHFVnVsMassFitter::SimultaneusFit(Bool_t drawFit) {
       fMassBkgFunc->SetParameter(iPar,result.Parameter(iPar));
       fMassBkgFunc->SetParError(iPar,result.ParError(iPar));
       if(fReflections) {
-        fMassRflFunc->SetParameter(iPar,result.Parameter(iPar));
-        fMassRflFunc->SetParError(iPar,result.ParError(iPar));
+        fMassBkgRflFunc->SetParameter(iPar,result.Parameter(iPar));
+        fMassBkgRflFunc->SetParError(iPar,result.ParError(iPar));
       }
     }
     if(fReflections && (iPar>=fNParsMassBkg+fNParsMassSgn+fNParsSec && iPar<fNParsMassBkg+fNParsMassSgn+fNParsSec+fNParsRfl)) {
       fMassRflFunc->SetParameter(iPar-(fNParsMassBkg+fNParsMassSgn+fNParsSec),result.Parameter(iPar));
       fMassRflFunc->SetParError(iPar-(fNParsMassBkg+fNParsMassSgn+fNParsSec),result.ParError(iPar));
+      fMassBkgRflFunc->SetParameter(iPar-(fNParsMassSgn+fNParsSec),result.Parameter(iPar));
+      fMassBkgRflFunc->SetParError(iPar-(fNParsMassSgn+fNParsSec),result.ParError(iPar));
     }
     if(fSecondPeak && (iPar>=fNParsMassBkg+fNParsMassSgn && iPar<fNParsMassBkg+fNParsMassSgn+fNParsSec)) {
       fMassSecPeakFunc->SetParameter(iPar-(fNParsMassBkg+fNParsMassSgn),result.Parameter(iPar));
@@ -376,13 +403,13 @@ void AliHFVnVsMassFitter::DrawHere(TVirtualPad* c){
     fMassBkgFunc->Draw("same");
   }
   if(fMassRflFunc) {
-    fMassRflFunc->SetLineColor(kGreen+1);
+    fMassRflFunc->SetLineColor(kGreen+2);
     fMassRflFunc->SetRange(fMassMin,fMassMax);
     fMassRflFunc->Draw("same");
   }
   if(fMassBkgRflFunc) {
-    fMassBkgRflFunc->SetLineColor(kRed+1);
-    fMassBkgRflFunc->SetLineStyle(7);
+    fMassBkgRflFunc->SetLineColor(kOrange+7);
+    fMassBkgRflFunc->SetLineStyle(9);
     fMassBkgRflFunc->SetRange(fMassMin,fMassMax);
     fMassBkgRflFunc->Draw("same");
   }
@@ -443,6 +470,7 @@ void AliHFVnVsMassFitter::DrawHere(TVirtualPad* c){
   vninfo->SetFillStyle(0);
   Int_t NvnParsSgn = 1;
   if(fSecondPeak && fDoSecondPeakVn) {NvnParsSgn+=1;}
+  if(fReflections && fVnRflOpt==kFreePar) {NvnParsSgn+=1;}
   vninfo->AddText(Form("#it{v}_{%d}^{sgn} = %.3f #pm %.3f",fHarmonic,fVnTotFunc->GetParameter(fVnTotFunc->GetNpar()-NvnParsSgn),fVnTotFunc->GetParError(fVnTotFunc->GetNpar()-NvnParsSgn)));
   if(fSecondPeak && fDoSecondPeakVn) {vninfo->AddText(Form("#it{v}_{%d}^{sec peak} = %.3f #pm %.3f",fHarmonic,fVnTotFunc->GetParameter(fVnTotFunc->GetNpar()-1),fVnTotFunc->GetParError(fVnTotFunc->GetNpar()-1)));}
   vninfo->AddText(Form("#chi^{2}/#it{ndf} = %.2f/%d",fChiSquare,fNDF));
@@ -484,7 +512,11 @@ Bool_t AliHFVnVsMassFitter::MassPrefit() {
   if(status) {
     fMassFuncFromPrefit = (TF1*)fMassFitter->GetMassFunc();
     fMassFuncFromPrefit->SetName("fMassFuncFromPrefit");
+    fMassPrefitChiSquare = fMassFitter->GetChiSquare();
+    fMassPrefitNDF       = fMassFitter->GetMassFunc()->GetNDF();
+    fMassPrefitProb      = fMassFitter->GetFitProbability();
   }
+  if(fReflections) fRawYieldHelp=fMassFitter->GetRawYield();
 
   return status;
 }
@@ -531,12 +563,16 @@ Bool_t AliHFVnVsMassFitter::VnSBPrefit() {
       AliError("Error in setting signal par names: check fVnBkgFuncType");
       break;
   }
-  gVnVsMassSB->Fit(fVnBkgFuncSb,"","",fMassMin,fMassMax);
-  Bool_t status=kFALSE;
-  if(fVnBkgFuncSb->GetChisquare()<1000) status=kTRUE;
+  Int_t status = gVnVsMassSB->Fit(fVnBkgFuncSb,"","",fMassMin,fMassMax);
+
+  fSBVnPrefitChiSquare = fVnBkgFuncSb->GetChisquare();
+  fSBVnPrefitNDF       = fVnBkgFuncSb->GetNDF();
+  fSBVnPrefitProb      = fVnBkgFuncSb->GetProb();
 
   delete gVnVsMassSB;
-  return status;
+
+  if(status==0) return kTRUE;
+  return kFALSE;
 }
 
 //________________________________________________________________
@@ -654,7 +690,7 @@ void AliHFVnVsMassFitter::SetParNames() {
     case 2: //pol2
       fVnTotFunc->SetParName(0,"BkgInt");
       fVnTotFunc->SetParName(1,"Coef1");
-      fVnTotFunc->SetParName(2,"Coef1");
+      fVnTotFunc->SetParName(2,"Coef2");
       break;
     case 3: //no bkg
       fVnTotFunc->SetParName(0,"Const");
@@ -685,8 +721,10 @@ void AliHFVnVsMassFitter::SetParNames() {
     fVnTotFunc->SetParName(fNParsMassBkg+fNParsMassSgn+1,"SecPeakMean");
     fVnTotFunc->SetParName(fNParsMassBkg+fNParsMassSgn+2,"SecPeakSigma");
   }
-  fVnTotFunc->SetParName(fNParsMassBkg+fNParsMassSgn+fNParsSec+fNParsVnBkg,Form("v%dSgn",fHarmonic));
-  if(fSecondPeak && fDoSecondPeakVn) {fVnTotFunc->SetParName(fNParsMassBkg+fNParsMassSgn+fNParsSec+fNParsVnBkg+1,Form("v%dSecPeak",fHarmonic));}
+  fVnTotFunc->SetParName(fNParsMassBkg+fNParsMassSgn+fNParsRfl+fNParsSec+fNParsVnBkg,Form("v%dSgn",fHarmonic));
+  
+  if(fSecondPeak && fDoSecondPeakVn) {fVnTotFunc->SetParName(fNParsMassBkg+fNParsMassSgn+fNParsRfl+fNParsSec+fNParsVnBkg+1,Form("v%dSecPeak",fHarmonic));}
+  if(fReflections && fVnRflOpt==kFreePar) {fVnTotFunc->SetParName(fNParsMassBkg+fNParsMassSgn+fNParsRfl+fNParsSec+fNParsVnBkg+1+fNParsVnSecPeak,Form("v%dRefl",fHarmonic));}
 }
 
 //_________________________________________________________________________
@@ -797,7 +835,7 @@ Double_t AliHFVnVsMassFitter::GetGausPDF(Double_t x, Double_t mean, Double_t sig
 Double_t AliHFVnVsMassFitter::GetExpoPDF(Double_t x, Double_t coeff, Bool_t isnorm) {
 
   if(isnorm) {return TMath::Exp(x/coeff)/(coeff*(TMath::Exp(fMassMax/coeff)-TMath::Exp(fMassMin/coeff)));}
-  else TMath::Exp(x/coeff);
+  else return TMath::Exp(x/coeff);
 }
 
 //________________________________________________________________
@@ -855,7 +893,6 @@ Double_t AliHFVnVsMassFitter::MassSignal(Double_t *m, Double_t *pars) {
       return pars[0]*(pars[3]*GetGausPDF(m[0],pars[1],pars[2])+(1-pars[3])*GetGausPDF(m[0],pars[1],pars[4]));
       break;
   }
-  fRawYieldHelp=pars[0]/fMassHisto->GetBinWidth(1);
 
   return 0;
 }
@@ -904,6 +941,7 @@ Double_t AliHFVnVsMassFitter::MassRfl(Double_t *m,Double_t *pars){
     value+=fHistoTemplRfl->GetBinContent(bin-1)+fHistoTemplRfl->GetBinContent(bin+1);
     value/=3.;
   }
+
   return pars[0]*value/norm*fRawYieldHelp*fMassHisto->GetBinWidth(1);
 }
 

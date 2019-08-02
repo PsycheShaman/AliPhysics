@@ -404,7 +404,7 @@ void AliAnalysisTaskHeavyNeutralMesonToGG::InitBack(){
   const Int_t nDim = 4;
   Int_t nBins[nDim] = {800,300,7,4};
   Double_t xMin[nDim] = {0,0, 0,0};
-  Double_t xMax[nDim] = {0.8,30,7,4};
+  Double_t xMax[nDim] = {1.2,30,7,4};
 
   if(fDoTHnSparse){
     fSparseMotherInvMassPtZM      = new THnSparseF*[fnCuts];
@@ -990,7 +990,9 @@ void AliAnalysisTaskHeavyNeutralMesonToGG::UserCreateOutputObjects(){
     if (fIsMC > 1){
       fHistoMotherInvMassPt[iCut]->Sumw2();
       fHistoMotherBackInvMassPt[iCut]->Sumw2();
-      if (fHistoMotherMatchedInvMassPt[iCut]) fHistoMotherMatchedInvMassPt[iCut]->Sumw2();
+      if(!fDoLightOutput && fMesonRecoMode == 1){
+        if (fHistoMotherMatchedInvMassPt[iCut]) fHistoMotherMatchedInvMassPt[iCut]->Sumw2();
+      }
     }
 
     if (fDoMesonQA > 0 ){
@@ -1217,8 +1219,10 @@ void AliAnalysisTaskHeavyNeutralMesonToGG::UserCreateOutputObjects(){
             fHistoDoubleCountTrueConvGammaRPt[iCut]->Sumw2();
             fHistoMultipleCountTrueConvGamma[iCut]->Sumw2();
           }
-          if (fMesonRecoMode > 0 || fEnableClusterCutsForTrigger){
+          if (fMesonRecoMode < 2 || fEnableClusterCutsForTrigger){
             fHistoTruePrimaryConvGammaPt[iCut]->Sumw2();
+          }
+          if (fMesonRecoMode > 0 || fEnableClusterCutsForTrigger){
             fHistoTruePrimaryClusGammaPt[iCut]->Sumw2();
             fHistoTrueNLabelsInClusPt[iCut]->Sumw2();
             fHistoTrueClusConvGammaPt[iCut]->Sumw2();
@@ -1488,9 +1492,9 @@ void AliAnalysisTaskHeavyNeutralMesonToGG::UserExec(Option_t *){
       return;
     }
 
-    if(fInputEvent->IsA()==AliAODEvent::Class()){
-      fInputEvent->InitMagneticField();
-    }
+//     if(fInputEvent->IsA()==AliAODEvent::Class()){
+//       fInputEvent->InitMagneticField();
+//     }
 
     fReaderGammas = fV0Reader->GetReconstructedGammas(); // Gammas from default Cut
 
@@ -1557,6 +1561,14 @@ void AliAnalysisTaskHeavyNeutralMesonToGG::UserExec(Option_t *){
         fHistoNEvents[iCut]->Fill(eventQuality, fWeightJetJetMC);
         if (fIsMC>1) fHistoNEventsWOWeight[iCut]->Fill(eventQuality);
         continue;
+      }
+      
+      if(fMesonRecoMode < 2){
+        if(((AliConversionPhotonCuts*)fCutArray->At(fiCut))->GetDoElecDeDxPostCalibration()){
+            if(!((AliConversionPhotonCuts*)fCutArray->At(fiCut))->LoadElecDeDxPostCalibration(fInputEvent->GetRunNumber())){
+            AliFatal(Form("ERROR: LoadElecDeDxPostCalibration returned kFALSE for %d despite being requested!",fInputEvent->GetRunNumber()));
+            }
+        }
       }
 
       if (triggered==kTRUE){
@@ -2228,8 +2240,8 @@ void AliAnalysisTaskHeavyNeutralMesonToGG::ProcessAODMCParticles(){
 
       // check neutral mesons
       if(((AliConversionMesonCuts*)fMesonCutArray->At(fiCut))->MesonIsSelectedAODMC(particle,AODMCTrackArray,((AliConvEventCuts*)fEventCutArray->At(fiCut))->GetEtaShift())){
-        AliAODMCParticle* daughter0 = static_cast<AliAODMCParticle*>(AODMCTrackArray->At(particle->GetDaughter(0)));
-        AliAODMCParticle* daughter1 = static_cast<AliAODMCParticle*>(AODMCTrackArray->At(particle->GetDaughter(1)));
+        AliAODMCParticle* daughter0 = static_cast<AliAODMCParticle*>(AODMCTrackArray->At(particle->GetDaughterLabel(0)));
+        AliAODMCParticle* daughter1 = static_cast<AliAODMCParticle*>(AODMCTrackArray->At(particle->GetDaughterLabel(1)));
         Float_t weighted= 1;
         if(((AliConvEventCuts*)fEventCutArray->At(fiCut))->IsParticleFromBGEvent(i, fMCEvent, fInputEvent)){
           if (particle->Pt()>0.005){
@@ -2613,7 +2625,9 @@ void AliAnalysisTaskHeavyNeutralMesonToGG::CalculateMesonCandidates(){
 
           if((((AliConversionMesonCuts*)fMesonCutArray->At(fiCut))->MesonIsSelected(mesonCand,kTRUE,((AliConvEventCuts*)fEventCutArray->At(fiCut))->GetEtaShift()))){
             if (matched){
-              if(fHistoMotherMatchedInvMassPt[fiCut]) fHistoMotherMatchedInvMassPt[fiCut]->Fill(mesonCand->M(),mesonCand->Pt(),fWeightJetJetMC);
+              if(!fDoLightOutput && fMesonRecoMode == 1){
+                if(fHistoMotherMatchedInvMassPt[fiCut]) fHistoMotherMatchedInvMassPt[fiCut]->Fill(mesonCand->M(),mesonCand->Pt(),fWeightJetJetMC);
+              }
             }else {
               if (!gamma0->GetUseForMesonPair() || !gamma1->GetUseForMesonPair()){
                 fHistoMotherInvMassRejected[fiCut]->Fill(mesonCand->M());
@@ -2694,7 +2708,7 @@ void AliAnalysisTaskHeavyNeutralMesonToGG::CalculateMesonCandidates(){
             if (fDoMesonQA > 0 && fDoMesonQA < 3){
               if ( mesonCand->M() > fMesonInvMassWindow[0] && mesonCand->M() < fMesonInvMassWindow[1]){
                 fHistoMotherMesonPtY[fiCut]->Fill(mesonCand->Pt(),mesonCand->Rapidity()-((AliConvEventCuts*)fEventCutArray->At(fiCut))->GetEtaShift(), fWeightJetJetMC);
-                fHistoMotherMesonPtAlpha[fiCut]->Fill(mesonCand->Pt(),TMath::Abs(mesonCand->GetAlpha()), fWeightJetJetMC);
+                fHistoMotherMesonPtAlpha[fiCut]->Fill(mesonCand->Pt(),mesonCand->GetAlpha(), fWeightJetJetMC);
                 fHistoMotherMesonPtOpenAngle[fiCut]->Fill(mesonCand->Pt(),mesonCand->GetOpeningAngle(), fWeightJetJetMC);
               }
             }
@@ -3111,7 +3125,7 @@ void AliAnalysisTaskHeavyNeutralMesonToGG::ProcessTrueMesonCandidatesCalo(  AliA
     if (fDoMesonQA > 0 && fDoMesonQA < 3){
       if ( mesonCand->M() > fMesonInvMassWindow[0] && mesonCand->M() < fMesonInvMassWindow[1] ){
         if (fHistoTrueMesonPtY[fiCut]) fHistoTrueMesonPtY[fiCut]->Fill(mesonCand->Pt(),mesonCand->Rapidity()-((AliConvEventCuts*)fEventCutArray->At(fiCut))->GetEtaShift(), fWeightJetJetMC);
-        if (fHistoTrueMesonPtAlpha[fiCut]) fHistoTrueMesonPtAlpha[fiCut]->Fill(mesonCand->Pt(),TMath::Abs(mesonCand->GetAlpha()), fWeightJetJetMC);
+        if (fHistoTrueMesonPtAlpha[fiCut]) fHistoTrueMesonPtAlpha[fiCut]->Fill(mesonCand->Pt(),mesonCand->GetAlpha(), fWeightJetJetMC);
         if (fHistoTrueMesonPtOpenAngle[fiCut]) fHistoTrueMesonPtOpenAngle[fiCut]->Fill(mesonCand->Pt(),mesonCand->GetOpeningAngle(), fWeightJetJetMC);
       }
 
@@ -3258,7 +3272,7 @@ void AliAnalysisTaskHeavyNeutralMesonToGG::ProcessTrueMesonCandidatesCaloAOD( Al
     if (fDoMesonQA > 0 && fDoMesonQA < 3){
       if ( mesonCand->M() > fMesonInvMassWindow[0]  && mesonCand->M() < fMesonInvMassWindow[1] ){
         if (fHistoTrueMesonPtY[fiCut]) fHistoTrueMesonPtY[fiCut]->Fill(mesonCand->Pt(),mesonCand->Rapidity()-((AliConvEventCuts*)fEventCutArray->At(fiCut))->GetEtaShift(), fWeightJetJetMC);
-        if (fHistoTrueMesonPtAlpha[fiCut]) fHistoTrueMesonPtAlpha[fiCut]->Fill(mesonCand->Pt(),TMath::Abs(mesonCand->GetAlpha()), fWeightJetJetMC);
+        if (fHistoTrueMesonPtAlpha[fiCut]) fHistoTrueMesonPtAlpha[fiCut]->Fill(mesonCand->Pt(),mesonCand->GetAlpha(), fWeightJetJetMC);
         if (fHistoTrueMesonPtOpenAngle[fiCut]) fHistoTrueMesonPtOpenAngle[fiCut]->Fill(mesonCand->Pt(),mesonCand->GetOpeningAngle(), fWeightJetJetMC);
       }
     }
@@ -3387,7 +3401,7 @@ void AliAnalysisTaskHeavyNeutralMesonToGG::ProcessTrueMesonCandidatesConv(  AliA
             if(fIsMC < 2){
               if (fHistoTrueMesonPtY[fiCut]) fHistoTrueMesonPtY[fiCut]->Fill(mesonCand->Pt(),mesonCand->Rapidity()-((AliConvEventCuts*)fEventCutArray->At(fiCut))->GetEtaShift());
               if (fHistoTrueMesonPtOpenAngle[fiCut]) fHistoTrueMesonPtOpenAngle[fiCut]->Fill(mesonCand->Pt(),mesonCand->GetOpeningAngle());
-              if (fHistoTrueMesonPtAlpha[fiCut]) fHistoTrueMesonPtAlpha[fiCut]->Fill(mesonCand->Pt(),TMath::Abs(mesonCand->GetAlpha()),fWeightJetJetMC);
+              if (fHistoTrueMesonPtAlpha[fiCut]) fHistoTrueMesonPtAlpha[fiCut]->Fill(mesonCand->Pt(),mesonCand->GetAlpha(),fWeightJetJetMC);
             }
           }
         }
@@ -3523,7 +3537,7 @@ void AliAnalysisTaskHeavyNeutralMesonToGG::ProcessTrueMesonCandidatesConvAOD( Al
             if (fHistoTrueMesonPtY[fiCut]) fHistoTrueMesonPtY[fiCut]->Fill(mesonCand->Pt(),mesonCand->Rapidity()-((AliConvEventCuts*)fEventCutArray->At(fiCut))->GetEtaShift());
             if (fHistoTrueMesonPtOpenAngle[fiCut]) fHistoTrueMesonPtOpenAngle[fiCut]->Fill(mesonCand->Pt(),mesonCand->GetOpeningAngle());
           }
-          if (fHistoTrueMesonPtAlpha[fiCut]) fHistoTrueMesonPtAlpha[fiCut]->Fill(mesonCand->Pt(),TMath::Abs(mesonCand->GetAlpha()),fWeightJetJetMC);
+          if (fHistoTrueMesonPtAlpha[fiCut]) fHistoTrueMesonPtAlpha[fiCut]->Fill(mesonCand->Pt(),mesonCand->GetAlpha(),fWeightJetJetMC);
         }
 
       }

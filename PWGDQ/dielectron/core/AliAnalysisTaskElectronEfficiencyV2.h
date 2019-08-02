@@ -15,9 +15,11 @@
 #include "AliAnalysisTaskSE.h"
 #include "AliDielectronSignalMC.h"
 #include "TString.h"
+#include "THnSparse.h"
 class TH1F;
 class TH2F;
 class TH3D;
+
 
 class AliTriggerAnalysis;
 class AliAnalysisFilter;
@@ -45,6 +47,7 @@ public:
    // called at end of analysis
    virtual void Terminate(Option_t* option);
 
+   void SetRun1Analysis(Bool_t answer){ run1analysis = answer; }
 
    enum Detector {kITS, kTPC, kTOF};
    Bool_t               GetEnablePhysicsSelection() const   {return fSelectPhysics; }
@@ -66,7 +69,9 @@ public:
 
 
    // Generator
-   void   SetGeneratorName(TString generatorName) { fGeneratorName = generatorName;}
+   void   SetGeneratorName         (TString generatorName) { fGeneratorName = generatorName;}
+   void   SetGeneratorMCSignalName (TString generatorName) { fGeneratorMCSignalName  = generatorName;}
+   void   SetGeneratorULSSignalName(TString generatorName) { fGeneratorULSSignalName = generatorName;}
 
    // Event setter
    void   SetEnablePhysicsSelection(Bool_t selectPhysics)   {fSelectPhysics = selectPhysics;}
@@ -99,13 +104,31 @@ public:
    void   SetThetaBinsLinear(const double min, const double max, const unsigned int steps){SetBinsLinear("theta", min, max, steps);}
 
    // pair binning setter
+   void   SetMassBins(std::vector<double> massBins){fMassBins=massBins;}
    void   SetMassBinsLinear(const double min, const double max, const unsigned int steps){SetBinsLinear("mass", min, max, steps);}
+   void   SetPairPtBins(std::vector<double> pairptBins){ fPairPtBins = pairptBins;}
    void   SetPairPtBinsLinear(const double min, const double max, const unsigned int steps){SetBinsLinear("pairpt", min, max, steps);}
 
    // Pair related setter
    void   SetDoPairing(Bool_t doPairing) {fDoPairing = doPairing;}
    void   SetULSandLS(Bool_t doULSandLS) {fDoULSandLS = doULSandLS;}
+   void   SetDeactivateLS(Bool_t deactivateLS) {fDeactivateLS = deactivateLS;}
    void   SetKinematicCuts(double ptMin, double ptMax, double etaMin, double etaMax) {fPtMin = ptMin; fPtMax = ptMax; fEtaMin = etaMin; fEtaMax = etaMax;}
+
+   // Single leg from Pair related setter
+   void   SetWriteLegsFromPair(bool enable){fWriteLegsFromPair = enable;}
+   void   SetPtMinLegsFromPair(const double ptMin){fPtMinLegsFromPair = ptMin;}
+   void   SetPtMaxLegsFromPair(const double ptMax){fPtMaxLegsFromPair = ptMax;}  
+   void   SetEtaMinLegsFromPair(const double etaMin){fEtaMinLegsFromPair = etaMin;}
+   void   SetEtaMaxLegsFromPair(const double etaMax){fEtaMaxLegsFromPair = etaMax;} 
+   void   SetPhiMinLegsFromPair(const double phiMin){fPhiMinLegsFromPair = phiMin;}
+   void   SetPhiMaxLegsFromPair(const double phiMax){fPhiMaxLegsFromPair = phiMax;} 
+   void   SetOpAngleMinLegsFromPair(const double opAngleMin){fOpAngleMinLegsFromPair = opAngleMin;}
+   void   SetOpAngleMaxLegsFromPair(const double opAngleMax){fOpAngleMaxLegsFromPair = opAngleMax;} 
+   void   SetPtNBinsLegsFromPair(const int ptNBins){fPtNBinsLegsFromPair = ptNBins;} 
+   void   SetEtaNBinsLegsFromPair(const int etaNBins){fEtaNBinsLegsFromPair = etaNBins;}
+   void   SetPhiNBinsLegsFromPair(const int phiNBins){fPhiNBinsLegsFromPair = phiNBins;}
+   void   SetOpAngleNBinsLegsFromPair(const int opAngleNBins){fOpAngleNBinsLegsFromPair = opAngleNBins;}
 
    // Set Cocktail waiting
    void SetDoCocktailWeighting(bool doCocktailWeight) { fDoCocktailWeighting = doCocktailWeight; }
@@ -124,14 +147,20 @@ public:
   class Particle{
   public:
     Particle() :
-      fPt(-99), fEta(-99), fPhi(-99), fCharge(-99), fPt_smeared(0.), fEta_smeared(0.), fPhi_smeared(0.), fTrackID(0), fMotherID(0), isMCSignal(), isReconstructed(), DielectronPairFromSameMother() {}
+      fPt(-99), fEta(-99), fPhi(-99), fCharge(-99), fPt_smeared(0.), fEta_smeared(0.), fPhi_smeared(0.), fTrackID(0), fMotherID(0), fMCSignalPair(false), fULSSignalPair(false), isMCSignal(), isReconstructed(), DielectronPairFromSameMother() {}
     Particle(double pt, double eta, double phi, short charge) :
-      fPt(pt), fEta(eta), fPhi(phi), fCharge(charge), fPt_smeared(0.), fEta_smeared(0.), fPhi_smeared(0.), fTrackID(0), fMotherID(0), isMCSignal(), isReconstructed(), DielectronPairFromSameMother() {}
+      fPt(pt), fEta(eta), fPhi(phi), fCharge(charge), fPt_smeared(0.), fEta_smeared(0.), fPhi_smeared(0.), fTrackID(0), fMotherID(0), fMCSignalPair(false), fULSSignalPair(false), isMCSignal(), isReconstructed(), DielectronPairFromSameMother() {}
+
     void SetTrackID(int id) {fTrackID = id;}
     void SetMotherID(int id) {fMotherID = id;}
+    void SetMCSignalPair (bool value) {fMCSignalPair = value;}
+    void SetULSSignalPair(bool value) {fULSSignalPair = value;}
     void SetDielectronPairFromSameMother(std::vector<Bool_t> vec){DielectronPairFromSameMother = vec;}
+
     int  GetTrackID() {return fTrackID;}
     int  GetMotherID() {return fMotherID;}
+    bool GetMCSignalPair() {return fMCSignalPair;}
+    bool GetULSSignalPair() {return fULSSignalPair;}
 
     double  fPt;
     double  fEta;
@@ -142,6 +171,8 @@ public:
     double  fPhi_smeared;
     int     fTrackID;
     int     fMotherID;
+    bool    fMCSignalPair;
+    bool    fULSSignalPair;
     std::vector<Bool_t> isMCSignal;
     std::vector<Bool_t> isReconstructed;
     std::vector<Bool_t> DielectronPairFromSameMother;
@@ -155,7 +186,7 @@ private:
   void    SetPIDResponse(AliPIDResponse *fPIDRespIn)        {fPIDResponse = fPIDRespIn;}
   void    CheckSingleLegMCsignals(std::vector<Bool_t>& vec, const int track);
   void    CheckPairMCsignals(std::vector<Bool_t>& vec, AliVParticle* part1, AliVParticle* part2);
-  bool    CheckGenerator(int trackID);
+  bool    CheckGenerator(int trackID, std::vector<unsigned int> vecHashes);
   void    CheckIfFromMotherWithDielectronAsDaughter(Particle& part);
   Bool_t  CheckIfOneIsTrue(std::vector<Bool_t>& vec);
 
@@ -232,7 +263,11 @@ private:
   std::vector<bool> fDielectronPairNotFromSameMother; // this is used to get electrons from charmed mesons in a environment where GEANT is doing the decay of D mesons, like in LHC18b5a
 
   TString fGeneratorName;
+  TString fGeneratorMCSignalName;
+  TString fGeneratorULSSignalName;
   std::vector<unsigned int> fGeneratorHashs;
+  std::vector<unsigned int> fGeneratorMCSignalHashs;
+  std::vector<unsigned int> fGeneratorULSSignalHashs;
 
   AliPIDResponse* fPIDResponse;
   AliVEvent*      fEvent;
@@ -276,8 +311,25 @@ private:
   std::vector<TH2D*> fHistGenSmearedPair_ULSandLS;
   std::vector<TH2D*> fHistRecPair_ULSandLS;
 
+  bool fWriteLegsFromPair;
+  double fPtMinLegsFromPair;
+  double fPtMaxLegsFromPair;
+  double fEtaMinLegsFromPair; 
+  double fEtaMaxLegsFromPair;
+  double fPhiMinLegsFromPair;
+  double fPhiMaxLegsFromPair;
+  double fOpAngleMinLegsFromPair; 
+  double fOpAngleMaxLegsFromPair;
+  int fPtNBinsLegsFromPair;
+  int fEtaNBinsLegsFromPair;
+  int fPhiNBinsLegsFromPair;
+  int fOpAngleNBinsLegsFromPair;
+  std::vector<THnSparseF*> fTHnSparseGenSmearedLegsFromPair;
+  std::vector<THnSparseF*> fTHnSparseRecLegsFromPair;
+
   Bool_t fDoPairing;
   Bool_t fDoULSandLS;
+  Bool_t fDeactivateLS;
   std::vector<Particle> fGenNegPart;
   std::vector<Particle> fGenPosPart;
   std::vector<Particle> fRecNegPart;
@@ -302,6 +354,8 @@ private:
   TH1* fPostPIDCntrdCorrTOF;     // post pid correction object for centroids in TOF
   TH1* fPostPIDWdthCorrTOF;      // post pid correction object for widths in TOF
 
+  Bool_t run1analysis;
+
 
   AliAnalysisTaskElectronEfficiencyV2(const AliAnalysisTaskElectronEfficiencyV2&); // not implemented
   AliAnalysisTaskElectronEfficiencyV2& operator=(const AliAnalysisTaskElectronEfficiencyV2&); // not implemented
@@ -311,3 +365,4 @@ private:
 
 
 # endif
+

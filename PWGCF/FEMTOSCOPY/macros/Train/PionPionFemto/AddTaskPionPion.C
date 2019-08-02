@@ -9,6 +9,9 @@
 #include <TList.h>
 #include <TObjArray.h>
 
+#include "AliAnalysisTaskFemto.h"
+#include "AliAnalysisManager.h"
+
 #endif
 
 ///
@@ -97,7 +100,7 @@ AliAnalysisTaskFemto* AddTaskPionPion(TString configuration,
   macro.ReplaceAll("%%", AUTO_DIRECTORY);
 
   // Dealing with subwagons
-  if (subwagon_suffix) {
+  if (!subwagon_suffix.IsWhitespace()) {
     subwagon_type.ToLower();
 
     if (subwagon_type == "centrality") {
@@ -107,10 +110,10 @@ AliAnalysisTaskFemto* AddTaskPionPion(TString configuration,
     }
   }
 
-  cout << "[AddTaskPionPion]\n"
-          "   output: '" << output_filename << "'\n"
-          "   macro: '" << macro << "'\n"
-          "   params: '" << params << "'\n";
+  std::cout << "[AddTaskPionPion]\n"
+               "   output: '" << output_filename << "'\n"
+               "   macro: '" << macro << "'\n"
+               "   params: '" << params << "'\n";
 
   // The analysis config macro for PionPionFemto accepts a single string
   // argument, which it interprets.

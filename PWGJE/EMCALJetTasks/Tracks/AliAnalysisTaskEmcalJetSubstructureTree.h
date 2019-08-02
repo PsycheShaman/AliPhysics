@@ -28,6 +28,7 @@
 #define ALIANALYSISTASKEMCALJETSUBSTRUCTURETREE_H
 
 #include "AliAnalysisTaskEmcalJet.h"
+#include "AliAnalysisEmcalTriggerSelectionHelper.h"
 #include <exception>
 #include <vector>
 #include <string>
@@ -45,7 +46,9 @@ class AliTrackContainer;
 
 #define EXPERIMENTAL_JETCONSTITUENTS
 
-namespace EmcalTriggerJets {
+namespace PWGJE {
+
+namespace EMCALJetTasks {
 
 /**
  * @struct AliNSubjettinessResults
@@ -122,6 +125,9 @@ struct AliJetKineParameters {
   Double_t fNEF;                             ///< Jet Neutral Energy Fraction
   Int_t    fNCharged;                        ///< Number of charged constituents
   Int_t    fNNeutral;                        ///< Number of neutral constituents
+  Double_t fZLeading;                        ///< z of the leading constituent
+  Double_t fZLeadingCharged;                 ///< z of the leading charged constituent
+  Double_t fZLeadingNeutral;                 ///< z of the leading neutral constituent
 
   void LinkJetTreeBranches(TTree *jettree, const char *tag);
 };
@@ -153,7 +159,7 @@ struct AliJetTreeGlobalParameters {
  * @ingroup PWGJETASKS
  *
  */
-class AliAnalysisTaskEmcalJetSubstructureTree : public AliAnalysisTaskEmcalJet {
+class AliAnalysisTaskEmcalJetSubstructureTree : public AliAnalysisTaskEmcalJet, public AliAnalysisEmcalTriggerSelectionHelperImpl {
 public:
   class ReclusterizerException : public std::exception {
   public:
@@ -180,6 +186,11 @@ public:
     kCAAlgo = 0,
     kKTAlgo = 1,
     kAKTAlgo = 2
+  };
+
+  enum JetRecType_t {
+    kDetLevel = 0,
+    kPartLevel = 1
   };
 
 	AliAnalysisTaskEmcalJetSubstructureTree();
@@ -225,7 +236,7 @@ protected:
 
 	AliNSubjettinessParameters MakeNsubjettinessParameters(const fastjet::PseudoJet &jet, const AliNSubjettinessDefinition &cut) const;
   
-  AliJetKineParameters MakeJetKineParameters(const AliEmcalJet &jet) const;
+  AliJetKineParameters MakeJetKineParameters(const AliEmcalJet &jet, JetRecType_t rectype, const AliParticleContainer *const particles, const AliClusterContainer *const clusters) const;
 
 	Double_t MakeAngularity(const AliEmcalJet &jet, const AliParticleContainer *tracks, const AliClusterContainer *clusters) const;
 
@@ -234,9 +245,6 @@ protected:
   void FillLuminosity();
   
 	void DoConstituentQA(const AliEmcalJet *jet, const AliParticleContainer *tracks, const AliClusterContainer *clusters);
-
-  std::string MatchTrigger(const std::string &triggerclass) const;
-  bool IsSelectEmcalTriggers(const std::string &triggerstring) const;
 
   bool SelectJet(const AliEmcalJet &jet, const AliParticleContainer *particles) const;
 
@@ -275,9 +283,7 @@ private:
   Bool_t                       fFillNSub;                   ///< Fill N-subjettiness
   Bool_t                       fFillStructGlob;             ///< Fill other substructure variables
 
-	/// \cond CLASSIMP
 	ClassDef(AliAnalysisTaskEmcalJetSubstructureTree, 1);
-	/// \endcond
 };
 
 /**
@@ -290,6 +296,8 @@ private:
  */
 void LinkBranch(TTree *jettree, void *data, const char *branchname, const char *type);
 
-} /* namespace EmcalTriggerJets */
+} /* namespace EMCALJetTasks */
+
+} /* namespace PWGJE */
 
 #endif /* ALIANALYSISTASKEMCALJETSUBSTRUCTURETREE_H */

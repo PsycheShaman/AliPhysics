@@ -1,30 +1,11 @@
 #include <TH1D.h>
 #include <TH2D.h>
+#include <TH3D.h>
 #include <TMath.h>
 #include <TComplex.h>
 #include <TClonesArray.h>
 #include "AliJBaseTrack.h"
 #include "AliJFFlucAnalysis.h"
-//#include "AliJCorrelations.h"
-//#include "AliAnalysisManager.h"
-//#include "AliAODEvent.h"
-//#include "AliAODTrack.h"
-//#include "AliVVertex.h"
-//#include "AliAODMCParticle.h"
-//#include "AliAODMCHeader.h"
-//#include "AliMCEventHandler.h"
-//#include "AliMCEvent.h"
-//#include "AliStack.h"
-//#include "AliHeader.h"
-//#include "AliGenEventHeader.h"
-//#include "AliGenCocktailEventHeader.h"
-//#include "AliGenPythiaEventHeader.h"
-//#include "AliInputEventHandler.h"
-//#include "AliESDVertex.h"
-//#include "AliVParticle.h"
-//#include "AliCentrality.h"
-//#include "AliEventplane.h"
-//#include "AliJHistManager.h"
 #include "AliJEfficiency.h"
 #pragma GCC diagnostic warning "-Wall"
 
@@ -53,6 +34,7 @@ AliJFFlucAnalysis::AliJFFlucAnalysis()
 	fh_eta(),
 	fh_phi(),
 	fh_phieta(),
+	fh_phietaz(),
 	//fh_Qvector(),
 	fh_ntracks(),
 	fh_vn(),
@@ -64,6 +46,7 @@ AliJFFlucAnalysis::AliJFFlucAnalysis()
 	fh_cn_2c_eta10(),
 	fh_cn_cn_2c_eta10()*/
 {
+	subeventMask = SUBEVENT_A|SUBEVENT_B;
 	flags = 0;
 	fEta_min = 0;
 	fEta_max = 0;
@@ -96,6 +79,7 @@ AliJFFlucAnalysis::AliJFFlucAnalysis(const char *name)
 	fh_eta(),
 	fh_phi(),
 	fh_phieta(),
+	fh_phietaz(),
 	//fh_Qvector(),
 	fh_ntracks(),
 	fh_vn(),
@@ -109,6 +93,7 @@ AliJFFlucAnalysis::AliJFFlucAnalysis(const char *name)
 {
 	cout << "analysis task created " << endl;
 
+	subeventMask = SUBEVENT_A|SUBEVENT_B;
 	flags = 0;
 	fEta_min = 0;
 	fEta_max = 0;
@@ -148,6 +133,7 @@ AliJFFlucAnalysis::AliJFFlucAnalysis(const AliJFFlucAnalysis& a):
 	fh_eta(a.fh_eta),
 	fh_phi(a.fh_phi),
 	fh_phieta(a.fh_phieta),
+	fh_phietaz(a.fh_phietaz),
 	//fh_Qvector(a.fh_Qvector),
 	fh_ntracks(a.fh_ntracks),
 	fh_vn(a.fh_vn),
@@ -237,6 +223,10 @@ void AliJFFlucAnalysis::UserCreateOutputObjects(){
 		<< "END" ;
 	fh_phieta
 		<< TH2D("h_phieta","h_phieta",50,-TMath::Pi(),TMath::Pi(),40,-2.0,2.0)
+		<< fHistCentBin
+		<< "END";
+	fh_phietaz
+		<< TH3D("h_phietaz","h_phietaz",50,-TMath::Pi(),TMath::Pi(),40,-2.0,2.0,20,-10.0,10.0)
 		<< fHistCentBin
 		<< "END";
 	/*fh_Qvector
@@ -427,6 +417,8 @@ void AliJFFlucAnalysis::UserExec(Option_t *) {
 	const TComplex (*pQq)[kNH][nKL] = QvectorQCeta10;
 
 	for(int i = 0; i < 2; ++i){
+		if((subeventMask & (1<<i)) == 0)
+			continue;
 		//Double_t ref_2p = N[i][0]*N[i][1];//TwoGap(pQq,i,0,0).Re();
 		Double_t ref_2p = TwoGap(pQq,i,0,0).Re();
 		Double_t ref_3p = ThreeGap(pQq,i,0,0,0).Re();
@@ -719,6 +711,7 @@ void AliJFFlucAnalysis::Fill_QA_plot( Double_t eta1, Double_t eta2 )
 		Double_t phi = itrack->Phi();
 
 		fh_phieta[fCBin]->Fill(phi,eta);
+		fh_phietaz[fCBin]->Fill(phi,eta,fVertex[2]);
 
 		if(TMath::Abs(eta) < eta1 || TMath::Abs(eta) > eta2)
 			continue;
@@ -726,7 +719,7 @@ void AliJFFlucAnalysis::Fill_QA_plot( Double_t eta1, Double_t eta2 )
 		Double_t phi_module_corr = 1.0;
 		if(flags & FLUC_PHI_CORRECTION && pPhiWeights){
 			Double_t w = pPhiWeights->GetBinContent(
-				pPhiWeights->FindBin(phi,eta));
+				pPhiWeights->FindBin(phi,eta,fVertex[2]));
 			if(w > 1e-6)
 				phi_module_corr = w;
 		}
@@ -811,7 +804,7 @@ TComplex AliJFFlucAnalysis::Get_Qn_pt(Double_t eta1, Double_t eta2, int harmonic
 		Double_t phi_module_corr = 1.0;
 		if(flags & FLUC_PHI_CORRECTION && pPhiWeights){
 			Double_t w = pPhiWeights->GetBinContent(
-				pPhiWeights->FindBin(phi,eta));
+				pPhiWeights->FindBin(phi,eta,fVertex[2]));
 			if(w > 1e-6)
 				phi_module_corr = w;
 		}
@@ -868,7 +861,7 @@ void AliJFFlucAnalysis::CalculateQvectorsQC(double etamin, double etamax){
 		Double_t phi_module_corr = 1.0;
 		if(flags & FLUC_PHI_CORRECTION && pPhiWeights){
 			Double_t w = pPhiWeights->GetBinContent(
-				pPhiWeights->FindBin(phi,eta));
+				pPhiWeights->FindBin(phi,eta,fVertex[2]));
 			if(w > 1e-6)
 				phi_module_corr = w;
 		}

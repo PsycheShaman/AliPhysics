@@ -68,6 +68,11 @@ public:
     fFixRflOverSig=kTRUE;
   }
   void SetReflVnOption(Int_t opt) {fVnRflOpt=opt;}
+  void SetReflVnParLimits(Double_t min, Double_t max) {
+    fVnRflLimited=kTRUE;
+    fVnRflMin=min;
+    fVnRflMax=max;
+  }
   void IncludeSecondGausPeak(Double_t mass, Bool_t fixm, Double_t width, Bool_t fixw, Bool_t doVn){
     fSecondPeak=kTRUE; fSecMass=mass; fSecWidth=width;
     fFixSecMass=fixm;  fFixSecWidth=fixw;
@@ -88,10 +93,18 @@ public:
   Int_t GetNDF() const {return fNDF;}
   Double_t GetReducedChiSquare() const {return fChiSquare/fNDF;}
   Double_t GetFitProbability() const {return fProb;}
+  Double_t GetSBVnPrefitChiSquare() const {return fSBVnPrefitChiSquare;}
+  Int_t GetSBVnPrefitNDF() const {return fSBVnPrefitNDF;}
+  Double_t GetSBVnPrefitReducedChiSquare() const {return fSBVnPrefitChiSquare/fSBVnPrefitNDF;}
+  Double_t GetSBVnPrefitProbability() const {return fSBVnPrefitProb;}
+  Double_t GetMassPrefitChiSquare() const {return fMassPrefitChiSquare;}
+  Int_t GetMassPrefitNDF() const {return fMassPrefitNDF;}
+  Double_t GetMassPrefitReducedChiSquare() const {return fMassPrefitChiSquare/fMassPrefitNDF;}
+  Double_t GetMassPrefitProbability() const {return fMassPrefitProb;}
   Double_t GetParticlePdgMass() const {return fMassParticle;}
   TH1F* GetTemplateReflections() {
-    if(fHistoTemplRfl) {return (TH1F*)fHistoTemplRfl->Clone();}
-    else if(fHistoTemplRflInit) {return (TH1F*)fHistoTemplRflInit->Clone();}
+    if(fHistoTemplRfl) {return (TH1F*)fHistoTemplRfl->Clone("fHistoTemplRfl");}
+    else if(fHistoTemplRflInit) {return (TH1F*)fHistoTemplRflInit->Clone("fHistoTemplRflInit");}
     else {return 0;}
   }
   void Signal(Double_t nOfSigma,Double_t &signal,Double_t &errsignal) const;
@@ -172,6 +185,12 @@ private:
   Double_t            fChiSquare;                   /// simultaneus fit chi square
   Int_t               fNDF;                         /// simultaneus fit number of degree of freedom
   Double_t            fProb;                        /// simultaneus fit probability
+  Double_t            fSBVnPrefitChiSquare;         /// vn SB prefit chi square
+  Int_t               fSBVnPrefitNDF;               /// vn SB prefit number of degree of freedom
+  Double_t            fSBVnPrefitProb;              /// vn SB prefit probability
+  Double_t            fMassPrefitChiSquare;         /// Mass prefit chi square
+  Int_t               fMassPrefitNDF;               /// Mass prefit number of degree of freedom
+  Double_t            fMassPrefitProb;              /// Mass prefit probability
   Int_t               fNSigmaForSB;                 /// number of sigma for sidebands region (vn bkg prefit)
   Double_t            fSigmaInit;                   /// initialization for peak width
   Double_t            fMeanInit;                    /// initialization for peak position
@@ -208,6 +227,9 @@ private:
   Bool_t              fSmoothRfl;                   /// switch for smoothing of reflection template
   Double_t            fRawYieldHelp;                /// internal variable for fit with reflections
   Int_t               fVnRflOpt;                    /// option for reflection vn type
+  Bool_t              fVnRflLimited;                /// flag to limit or not the vn of reflections
+  Double_t            fVnRflMin;                    /// minimum vn of reflections
+  Double_t            fVnRflMax;                    /// maximum vn of reflections
   Bool_t              fSecondPeak;                  /// switch off/on second peak (for D+->KKpi in Ds)
   TF1*                fMassSecPeakFunc;             /// fit function for second peak
   Int_t               fNParsSec;                    /// number of parameters in second peak fit function
@@ -221,7 +243,7 @@ private:
   Int_t               fHarmonic;                    /// harmonic number for drawing
 
     /// \cond CLASSDEF
-  ClassDef(AliHFVnVsMassFitter,3);
+  ClassDef(AliHFVnVsMassFitter,5);
     /// \endcond
 };
 #endif //ALIHFVNVSMASSFITTER

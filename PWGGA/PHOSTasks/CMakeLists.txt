@@ -55,6 +55,7 @@ include_directories(${ROOT_INCLUDE_DIRS}
                     ${AliPhysics_SOURCE_DIR}/OADB
 		    ${AliPhysics_SOURCE_DIR}/OADB/COMMON/MULTIPLICITY
                     ${AliPhysics_SOURCE_DIR}/PWGGA/PWGGAUtils
+                    ${AliPhysics_SOURCE_DIR}/PWGGA/GammaConvBase/
                     ${AliPhysics_SOURCE_DIR}/PWGGA/GammaConv/
                     ${AliPhysics_SOURCE_DIR}/PWGCF/FEMTOSCOPY/AliFemto
                     ${AliPhysics_SOURCE_DIR}/PWGPP/EVCHAR/FlowVectorCorrections/QnCorrections
@@ -82,27 +83,30 @@ set(SRCS
     PHOS_GAFlow/AliAnalysisTaskThermalGAFlow.cxx
     PHOS_GAFlow/AliAnalysisTaskThermalGAFlowMC.cxx
     PHOS_LHC16_pp/AliAnalysisTaskPP13.cxx
+    PHOS_LHC16_pp/AliPP13AnalysisCluster.cxx
     PHOS_LHC16_pp/AliPP13ClusterCuts.cxx
     PHOS_LHC16_pp/AliPP13DetectorHistogram.cxx
     PHOS_LHC16_pp/AliPP13EfficiencySelectionMC.cxx
     PHOS_LHC16_pp/AliPP13EfficiencySelectionSPMC.cxx
     PHOS_LHC16_pp/AliPP13EpRatioSelection.cxx
+    PHOS_LHC16_pp/AliPP13FeeddownSelection.cxx
+    PHOS_LHC16_pp/AliPP13KaonToPionRatioMC.cxx
     PHOS_LHC16_pp/AliPP13MesonSelectionMC.cxx
     PHOS_LHC16_pp/AliPP13MixingSample.cxx
     PHOS_LHC16_pp/AliPP13NonlinearityScanSelection.cxx
     PHOS_LHC16_pp/AliPP13NonlinearitySelection.cxx
     PHOS_LHC16_pp/AliPP13ParticlesHistogram.cxx
-    PHOS_LHC16_pp/AliPP13PhotonSelection.cxx
-    PHOS_LHC16_pp/AliPP13PhotonSelectionMC.cxx
     PHOS_LHC16_pp/AliPP13PhotonSpectrumSelection.cxx
     PHOS_LHC16_pp/AliPP13PhotonTimecutStudySelection.cxx
-    PHOS_LHC16_pp/AliPP13PhysPhotonSelection.cxx
-    PHOS_LHC16_pp/AliPP13KaonToPionRatioMC.cxx
-    PHOS_LHC16_pp/AliPP13PhysPhotonSelectionMC.cxx
+    PHOS_LHC16_pp/AliPP13PhysicsSelection.cxx
     PHOS_LHC16_pp/AliPP13PythiaInfoSelection.cxx
     PHOS_LHC16_pp/AliPP13QualityPhotonSelection.cxx
     PHOS_LHC16_pp/AliPP13SelectionWeights.cxx
+    PHOS_LHC16_pp/AliPP13SpectrumSelection.cxx
+    PHOS_LHC16_pp/AliPP13SpectrumSelectionMC.cxx
     PHOS_LHC16_pp/AliPP13TagAndProbeSelection.cxx
+    PHOS_LHC16_pp/AliPP13TriggerEfficiency.cxx
+    PHOS_LHC16_pp/AliPP13TriggerProperties.cxx
     PHOS_NeutralMeson/AliAnalysisTaskPHOSNeutralMeson.cxx
     PHOS_PbPb/AliAnalysisTaskPi0Flow.cxx
     PHOS_PbPb/AliAnalysisTaskGammaFlow.cxx
@@ -153,7 +157,7 @@ get_directory_property(incdirs INCLUDE_DIRECTORIES)
 generate_dictionary("${MODULE}" "${MODULE}LinkDef.h" "${HDRS}" "${incdirs}")
 
 set(ROOT_DEPENDENCIES Core EG Geom Gpad Hist MathCore Physics RIO Tree)
-set(ALIROOT_DEPENDENCIES ANALYSIS ANALYSISalice ESDfilter AOD CDB EMCALUtils ESD PHOSbase PHOSrec PHOSUtils PWGGAUtils STEER STEERBase Tender TenderSupplies PWGPPevcharQn PWGPPevcharQnInterface)
+set(ALIROOT_DEPENDENCIES ANALYSIS ANALYSISalice ESDfilter AOD CDB EMCALUtils ESD PHOSbase PHOSrec PHOSUtils PWGGAUtils PWGGAGammaConvBase STEER STEERBase Tender TenderSupplies PWGPPevcharQn PWGPPevcharQnInterface)
 
 # Generate the ROOT map
 # Dependecies

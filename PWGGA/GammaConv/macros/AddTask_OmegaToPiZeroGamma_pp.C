@@ -72,7 +72,7 @@ void AddTask_OmegaToPiZeroGamma_pp(  Int_t     trainConfig                   = 1
                                 Bool_t    enableV0findingEffi           = kFALSE,                 // enables V0finding efficiency histograms
                                 Bool_t    enableTriggerMimicking        = kFALSE,                 // enable trigger mimicking
                                 Bool_t    enableTriggerOverlapRej       = kFALSE,                 // enable trigger overlap rejection
-                                Float_t   maxFacPtHard                  = 3.,                     // maximum factor between hardest jet and ptHard generated
+                                TString   settingMaxFacPtHard           = "3.",                   // maximum factor between hardest jet and ptHard generated
                                 TString   periodNameV0Reader            = "",                     // period Name for V0 Reader
                                 Bool_t    doMultiplicityWeighting       = kFALSE,                 // enable multiplicity weights
                                 TString   fileNameInputForMultWeighing  = "Multiplicity.root",    // file for multiplicity weights
@@ -86,6 +86,7 @@ void AddTask_OmegaToPiZeroGamma_pp(  Int_t     trainConfig                   = 1
                                 TString   additionalTrainConfig         = "0"                     // additional counter for trainconfig, this has to be always the last parameter
               ) {
 
+  Int_t trackMatcherRunningMode = 0; // CaloTrackMatcher running mode
   //parse additionalTrainConfig flag
   TObjArray *rAddConfigArr = additionalTrainConfig.Tokenize("_");
   if(rAddConfigArr->GetEntries()<1){cout << "ERROR during parsing of additionalTrainConfig String '" << additionalTrainConfig.Data() << "'" << endl; return;}
@@ -95,7 +96,12 @@ void AddTask_OmegaToPiZeroGamma_pp(  Int_t     trainConfig                   = 1
     else{
       TObjString* temp = (TObjString*) rAddConfigArr->At(i);
       TString tempStr = temp->GetString();
-      cout << "INFO: nothing to do, no definition available!" << endl;
+      if(tempStr.BeginsWith("TM")){
+        TString tempType = tempStr;
+        tempType.Replace(0,2,"");
+        trackMatcherRunningMode = tempType.Atoi();
+        cout << Form("INFO: AddTask_OmegaToPiZeroGamma_pp will use running mode '%i' for the TrackMatcher!",trackMatcherRunningMode) << endl;
+      }
     }
   }
   TString sAdditionalTrainConfig = rAdditionalTrainConfig->GetString();
@@ -103,6 +109,40 @@ void AddTask_OmegaToPiZeroGamma_pp(  Int_t     trainConfig                   = 1
     trainConfig = trainConfig + sAdditionalTrainConfig.Atoi();
     cout << "INFO: AddTask_OmegaToPiZeroGamma_pp running additionalTrainConfig '" << sAdditionalTrainConfig.Atoi() << "', train config: '" << trainConfig << "'" << endl;
   }
+
+  TObjArray *rmaxFacPtHardSetting = settingMaxFacPtHard.Tokenize("_");
+  if(rmaxFacPtHardSetting->GetEntries()<1){cout << "ERROR: AddTask_OmegaToPiZeroGamma_pp during parsing of settingMaxFacPtHard String '" << settingMaxFacPtHard.Data() << "'" << endl; return;}
+  Bool_t fMinPtHardSet        = kFALSE;
+  Double_t minFacPtHard       = -1;
+  Bool_t fMaxPtHardSet        = kFALSE;
+  Double_t maxFacPtHard       = 100;
+  Bool_t fSingleMaxPtHardSet  = kFALSE;
+  Double_t maxFacPtHardSingle = 100;
+  for(Int_t i = 0; i<rmaxFacPtHardSetting->GetEntries() ; i++){
+    TObjString* tempObjStrPtHardSetting     = (TObjString*) rmaxFacPtHardSetting->At(i);
+    TString strTempSetting                  = tempObjStrPtHardSetting->GetString();
+    if(strTempSetting.BeginsWith("MINPTHFAC:")){
+      strTempSetting.Replace(0,10,"");
+      minFacPtHard               = strTempSetting.Atof();
+      cout << "running with min pT hard jet fraction of: " << minFacPtHard << endl;
+      fMinPtHardSet        = kTRUE;
+    } else if(strTempSetting.BeginsWith("MAXPTHFAC:")){
+      strTempSetting.Replace(0,10,"");
+      maxFacPtHard               = strTempSetting.Atof();
+      cout << "running with max pT hard jet fraction of: " << maxFacPtHard << endl;
+      fMaxPtHardSet        = kTRUE;
+    } else if(strTempSetting.BeginsWith("MAXPTHFACSINGLE:")){
+      strTempSetting.Replace(0,16,"");
+      maxFacPtHardSingle         = strTempSetting.Atof();
+      cout << "running with max single particle pT hard fraction of: " << maxFacPtHardSingle << endl;
+      fSingleMaxPtHardSet        = kTRUE;
+    } else if(rmaxFacPtHardSetting->GetEntries()==1 && strTempSetting.Atof()>0){
+      maxFacPtHard               = strTempSetting.Atof();
+      cout << "running with max pT hard jet fraction of: " << maxFacPtHard << endl;
+      fMaxPtHardSet        = kTRUE;
+    }
+  }
+
 
   Int_t isHeavyIon = 0;
 
@@ -208,6 +248,7 @@ void AddTask_OmegaToPiZeroGamma_pp(  Int_t     trainConfig                   = 1
   task->SetDoPiZeroGammaAngleCut(DoPiZeroGammaAngleCut);
   task->SetlowerFactor(lowerFactor);
   task->SetupperFactor(upperFactor);
+  task->SetTrackMatcherRunningMode(trackMatcherRunningMode);
 
   //create cut handler
   CutHandlerPiZeroGamma cuts;
@@ -257,6 +298,9 @@ void AddTask_OmegaToPiZeroGamma_pp(  Int_t     trainConfig                   = 1
     cuts.AddCut("00052113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
     cuts.AddCut("00085113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
     cuts.AddCut("00083113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
+  } else if( trainConfig == 61) {
+    //only MB 13TeV
+    cuts.AddCut("00010113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
 
   // cuts for ReconMethod==1
   } else if(trainConfig == 101){ // EMCAL clusters pp 7 TeV
@@ -296,6 +340,9 @@ void AddTask_OmegaToPiZeroGamma_pp(  Int_t     trainConfig                   = 1
     cuts.AddCut("00052113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
     cuts.AddCut("00085113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
     cuts.AddCut("00083113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
+  } else if( trainConfig == 161) {
+    //only MB 13TeV
+    cuts.AddCut("00010113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
 
   // cuts for ReconMethod==2
   } else if(trainConfig == 201){ // EMCAL clusters pp 7 TeV
@@ -335,6 +382,9 @@ void AddTask_OmegaToPiZeroGamma_pp(  Int_t     trainConfig                   = 1
     cuts.AddCut("00052113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
     cuts.AddCut("00085113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
     cuts.AddCut("00083113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
+  } else if( trainConfig == 261) {
+    //only MB 13TeV
+    cuts.AddCut("00010113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
 
 
   // cuts for ReconMethod==3
@@ -375,6 +425,9 @@ void AddTask_OmegaToPiZeroGamma_pp(  Int_t     trainConfig                   = 1
     cuts.AddCut("00052113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
     cuts.AddCut("00085113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
     cuts.AddCut("00083113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
+  } else if( trainConfig == 361) {
+    //only MB 13TeV
+    cuts.AddCut("00010113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
 
   // cuts for ReconMethod==4
   } else if(trainConfig == 401){ // EMCAL clusters pp 7 TeV
@@ -419,6 +472,9 @@ void AddTask_OmegaToPiZeroGamma_pp(  Int_t     trainConfig                   = 1
     cuts.AddCut("00052113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
     cuts.AddCut("00085113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
     cuts.AddCut("00083113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
+  } else if( trainConfig == 461) {
+    //only MB 13TeV
+    cuts.AddCut("00010113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
 
 
   // cuts for ReconMethod==5
@@ -460,6 +516,9 @@ void AddTask_OmegaToPiZeroGamma_pp(  Int_t     trainConfig                   = 1
     cuts.AddCut("00052113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
     cuts.AddCut("00085113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
     cuts.AddCut("00083113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
+  } else if( trainConfig == 561) {
+    //only MB 13TeV
+    cuts.AddCut("00010113","00200009327000008250400000","1111111067032230000","0163103100000010","0163103000000010");
   } else {
     Error(Form("OmegaToPiZeroGamma_%i_%i", trainConfig, isMC), "wrong trainConfig variable no cuts have been specified for the configuration");
     return;
@@ -495,9 +554,9 @@ void AddTask_OmegaToPiZeroGamma_pp(  Int_t     trainConfig                   = 1
     //create AliCaloTrackMatcher instance, if there is none present
     TString caloCutPos = cuts.GetClusterCut(i);
     caloCutPos.Resize(1);
-    TString TrackMatcherName = Form("CaloTrackMatcher_%s",caloCutPos.Data());
+    TString TrackMatcherName = Form("CaloTrackMatcher_%s_%i",caloCutPos.Data(),trackMatcherRunningMode);
     if( !(AliCaloTrackMatcher*)mgr->GetTask(TrackMatcherName.Data()) ){
-      AliCaloTrackMatcher* fTrackMatcher = new AliCaloTrackMatcher(TrackMatcherName.Data(),caloCutPos.Atoi());
+      AliCaloTrackMatcher* fTrackMatcher = new AliCaloTrackMatcher(TrackMatcherName.Data(),caloCutPos.Atoi(),trackMatcherRunningMode);
       fTrackMatcher->SetV0ReaderName(V0ReaderName);
       mgr->AddTask(fTrackMatcher);
       mgr->ConnectInput(fTrackMatcher,0,cinput);
@@ -525,7 +584,12 @@ void AddTask_OmegaToPiZeroGamma_pp(  Int_t     trainConfig                   = 1
 
     analysisEventCuts[i]->SetTriggerMimicking(enableTriggerMimicking);
     analysisEventCuts[i]->SetTriggerOverlapRejecion(enableTriggerOverlapRej);
-    analysisEventCuts[i]->SetMaxFacPtHard(maxFacPtHard);
+    if(fMinPtHardSet)
+      analysisEventCuts[i]->SetMinFacPtHard(minFacPtHard);
+    if(fMaxPtHardSet)
+      analysisEventCuts[i]->SetMaxFacPtHard(maxFacPtHard);
+    if(fSingleMaxPtHardSet)
+      analysisEventCuts[i]->SetMaxFacPtHardSingleParticle(maxFacPtHardSingle);
     analysisEventCuts[i]->SetV0ReaderName(V0ReaderName);
     analysisEventCuts[i]->SetLightOutput(runLightOutput);
     analysisEventCuts[i]->InitializeCutsFromCutString((cuts.GetEventCut(i)).Data());
